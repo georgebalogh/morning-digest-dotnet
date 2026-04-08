@@ -98,7 +98,8 @@ public class GmailService
 
     public async Task<IList<Message>> ListEmailsAsync(string labelName, DateTime afterDate, int maxResults)
     {
-        var afterStr = $"{afterDate.Year}/{afterDate.Month:D2}/{afterDate.Day:D2}";
+        var localDate = afterDate.ToLocalTime();
+        var afterStr = $"{localDate.Year}/{localDate.Month:D2}/{localDate.Day:D2}";
         var query = $"label:{labelName} after:{afterStr}";
         Console.WriteLine($"[1/6] Email lista lekérése: \"{query}\"");
 

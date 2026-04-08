@@ -1,0 +1,14 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.log
+
+# Publish output
+publish/
+
+# Secrets (soha ne kerüljön be)
+credentials.json
+*.key

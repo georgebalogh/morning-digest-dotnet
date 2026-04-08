@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>balog</UserId>
+      <Delay>PT30S</Delay>
+    </LogonTrigger>
+  </Triggers>
+  <Settings>
+    <RunOnlyIfNetworkAvailable>true</RunOnlyIfNetworkAvailable>
+    <ExecutionTimeLimit>PT10M</ExecutionTimeLimit>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>C:\Work\Agents\MorningDigest.Net\bin\Release\net8.0\MorningDigest.exe</Command>
+      <WorkingDirectory>C:\Work\Agents\MorningDigest.Net</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>

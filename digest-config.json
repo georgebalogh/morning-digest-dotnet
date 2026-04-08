@@ -1,0 +1,35 @@
+{
+  "gmail_label": "Develop",
+  "relevance_threshold": 6,
+  "max_emails": 50,
+  "last_run_file": "last-run.txt",
+  "model": "gemini-2.5-flash",
+  "topics": {
+    "primary": [
+      ".NET", "C#", "ASP.NET Core", "ASP.NET",
+      "Domain-Driven Design", "DDD", "Aggregate", "Bounded Context", "Value Object",
+      "CQRS", "Command Query Responsibility Segregation",
+      "Event Sourcing", "Event Store", "Outbox Pattern",
+      "Software Architecture", "System Design", "Architectural Patterns",
+      "Microservices", "Service Mesh", "API Gateway",
+      "Vertical Slice Architecture", "FastEndpoints", "Minimal API",
+      "MediatR", "MassTransit", "Saga", "Saga Orchestration",
+      "gRPC", "SignalR"
+    ],
+    "secondary": [
+      "Prompt Engineering", "Context Window", "Few-shot",
+      "Model Context Protocol", "MCP", "Agentic", "Multi-agent", "Agentic Workflow",
+      "Technical Debt", "Refactoring", "Code Quality",
+      "Clean Architecture", "Hexagonal Architecture"
+    ],
+    "bonus_sources": [
+      "martinfowler.com", "ardalis.com", "jimmybogard.com", "jeremydmiller.com",
+      "devblogs.microsoft.com", "infoq.com", "themorningbrew.net"
+    ],
+    "negative_patterns": [
+      "we're hiring", "we are hiring", "join our team", "job opening", "job posting",
+      "what is rest", "introduction to", "beginners guide", "beginner's guide",
+      "getting started with basics"
+    ]
+  }
+}

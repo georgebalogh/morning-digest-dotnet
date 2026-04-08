@@ -66,6 +66,23 @@ public static class UrlExtractor
     private static readonly Regex StripTagsRegex =
         new(@"<[^>]+>", RegexOptions.Compiled);
 
+    // ─── Article URL filter ───────────────────────────────────────────────────
+
+    /// Matches URLs that look like real articles:
+    ///   - must have a path beyond just "/"
+    ///   - path segment must be >= 5 chars
+    ///   - no profile paths (/@...) or tag/category/marketing pages
+    private static readonly Regex ArticlePathRegex =
+        new(@"^https?://[^/]+/[^/]{5,}", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly string[] NonArticlePrefixes =
+    [
+        "/@", "/tag/", "/topic/", "/category/", "/categories/",
+        "/membership", "/subscribe", "/about", "/search",
+        "/newsletter", "/author/", "/page/", "/feed", "/rss",
+        "/login", "/signup", "/register", "/profile/",
+    ];
+
     private const int MinSequenceLength = 3;
     private const int MaxLinksPerContainer = 2;
     private const int MinUrlLength = 20;
@@ -268,6 +285,7 @@ public static class UrlExtractor
 
                 if (url.Length < MinUrlLength) continue;
                 if (IsBlacklisted(url)) continue;
+                if (!IsArticleUrl(url)) continue;
                 if (!seen.Add(url)) continue;
 
                 // Anchor text from element
@@ -386,4 +404,22 @@ public static class UrlExtractor
 
     private static bool IsBlacklisted(string url) =>
         Blacklist.Any(b => url.Contains(b, StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsArticleUrl(string url)
+    {
+        // Must match the article path pattern (path segment >= 5 chars after domain)
+        if (!ArticlePathRegex.IsMatch(url)) return false;
+
+        // Extract just the path portion
+        string path;
+        try { path = new Uri(url).AbsolutePath; }
+        catch { return false; }
+
+        // Reject profile, tag, category, and marketing pages
+        foreach (var prefix in NonArticlePrefixes)
+            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+        return true;
+    }
 }

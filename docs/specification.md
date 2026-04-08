@@ -113,12 +113,10 @@ MorningDigest.Net/
 
 **4 fázis:**
 
-| Fázis | Leírás |
-|-------|--------|
-| **Phase 1** | AngleSharp DOM parse — nyers HTML → teljes DOM fa |
-| **Phase 2** | Rekurzív DOM bejárás; fingerprint = `"TAG:CHILD1\|CHILD2\|..."` (közvetlen element gyerekek, text node-ok kihagyva) |
-| **Phase 3** | Leghosszabb ≥3 elemű, azonos fingerprint-ű sorozat keresése (max 1 zaj-elem tolerancia); ha nincs → email eldobva |
-| **Phase 4** | URL kinyerés a winning konténerekből: `&amp;` decode → redirect unwrap → query-string strip → blacklist → article-filter → max 2 link/konténer |
+- **Phase 1 — DOM parse:** AngleSharp beolvassa a nyers HTML-t → teljes DOM fa
+- **Phase 2 — Fingerprinting:** Rekurzív DOM bejárás; minden elem fingerprint-je = `"TAG:CHILD1|CHILD2|..."` (közvetlen element gyerekek, text node-ok kihagyva)
+- **Phase 3 — Sorozatdetektálás:** Leghosszabb ≥3 elemű, azonos fingerprint-ű sorozat keresése (max 1 zaj-elem tolerancia); ha nincs találat → email eldobva
+- **Phase 4 — URL kinyerés:** A winning konténerekből: `&` decode → redirect unwrap → query-string strip → blacklist → article-filter → max 2 link/konténer
 
 **Article URL szűrő szabályok (`IsArticleUrl()`):**
 

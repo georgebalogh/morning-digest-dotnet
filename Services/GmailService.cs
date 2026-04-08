@@ -222,16 +222,11 @@ public class GmailService
                 return DecodeBase64Url(part.Body.Data);
         }
 
-        // 2. prioritás: text/html, majd nested parts
+        // 2. prioritás: text/html (nyers HTML — az UrlExtractor dolgozza fel), majd nested parts
         foreach (var part in payload.Parts)
         {
             if (part.MimeType == "text/html" && !string.IsNullOrEmpty(part.Body?.Data))
-            {
-                var html = DecodeBase64Url(part.Body.Data);
-                return Regex.Replace(html, "<[^>]+>", " ")
-                            .Replace("\n", " ").Replace("\r", " ")
-                            .Replace("  ", " ").Trim();
-            }
+                return DecodeBase64Url(part.Body.Data);
 
             if (part.Parts != null)
             {

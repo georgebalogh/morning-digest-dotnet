@@ -415,15 +415,20 @@ public static class UrlExtractor
         try { path = new Uri(url).AbsolutePath; }
         catch { return false; }
 
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
         // Special case: Medium-style /@username/article-slug paths
         // /@username alone = profile (reject), /@username/slug = article (allow)
         if (path.StartsWith("/@", StringComparison.OrdinalIgnoreCase))
         {
-            var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
             if (segments.Length < 2) return false;
             // 2+ segments → real article, skip further prefix checks
             return true;
         }
+
+        // Must have at least 2 path segments (e.g. /publication/article-slug)
+        // Single-segment paths are publication/tag homepages, not articles
+        if (segments.Length < 2) return false;
 
         // Reject tag, category, and marketing pages
         foreach (var prefix in NonArticlePrefixes)

@@ -89,7 +89,6 @@ public static class DigestBuilder
         var color = ScoreColor(item.Score);
         var bar = ScoreBar(item.Score);
         var escapedTitle = System.Net.WebUtility.HtmlEncode(item.Title);
-        var escapedSource = System.Net.WebUtility.HtmlEncode(item.Source);
         var escapedDescription = System.Net.WebUtility.HtmlEncode(item.Description);
 
         return $"""
@@ -100,12 +99,9 @@ public static class DigestBuilder
                     {bar}
                     <span style="color:{color};font-weight:700;margin-left:8px;">{item.Score}/10</span>
                   </div>
-                  <h2 style="margin:0 0 6px 0;font-size:18px;font-weight:700;line-height:1.3;">
+                  <h2 style="margin:0 0 12px 0;font-size:18px;font-weight:700;line-height:1.3;">
                     <a href="{item.Url}" style="color:#0f172a;text-decoration:none;">{escapedTitle}</a>
                   </h2>
-                  <div style="margin-bottom:10px;font-size:12px;color:#64748b;">
-                    📧 {escapedSource}
-                  </div>
                   <p style="margin:0;font-size:14px;color:#475569;line-height:1.6;border-left:3px solid {color};padding-left:12px;">
                     {escapedDescription}
                   </p>

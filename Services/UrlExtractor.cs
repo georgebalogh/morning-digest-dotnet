@@ -77,7 +77,7 @@ public static class UrlExtractor
 
     private static readonly string[] NonArticlePrefixes =
     [
-        "/@", "/tag/", "/topic/", "/category/", "/categories/",
+        "/tag/", "/topic/", "/category/", "/categories/",
         "/membership", "/subscribe", "/about", "/search",
         "/newsletter", "/author/", "/page/", "/feed", "/rss",
         "/login", "/signup", "/register", "/profile/",
@@ -415,7 +415,17 @@ public static class UrlExtractor
         try { path = new Uri(url).AbsolutePath; }
         catch { return false; }
 
-        // Reject profile, tag, category, and marketing pages
+        // Special case: Medium-style /@username/article-slug paths
+        // /@username alone = profile (reject), /@username/slug = article (allow)
+        if (path.StartsWith("/@", StringComparison.OrdinalIgnoreCase))
+        {
+            var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length < 2) return false;
+            // 2+ segments → real article, skip further prefix checks
+            return true;
+        }
+
+        // Reject tag, category, and marketing pages
         foreach (var prefix in NonArticlePrefixes)
             if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 return false;

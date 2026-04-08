@@ -12,3 +12,6 @@ publish/
 # Secrets (soha ne kerüljön be)
 credentials.json
 *.key
+
+# Docs — generated intermediates
+docs/*.html

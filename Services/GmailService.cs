@@ -128,7 +128,8 @@ public class GmailService
     {
         var localDate = afterDate.ToLocalTime();
         var afterStr = $"{localDate.Year}/{localDate.Month:D2}/{localDate.Day:D2}";
-        var query = $"label:{labelName} after:{afterStr}";
+        // Kizárjuk a saját digest emailjeinket, hogy ne dolgozza fel önmagát
+        var query = $"label:{labelName} after:{afterStr} -subject:\"Tech Digest\"";
         Console.WriteLine($"[1/6] Email lista lekérése: \"{query}\"");
 
         var request = _gmail.Users.Messages.List("me");

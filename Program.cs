@@ -124,8 +124,9 @@ if (relevantEmails.Count == 0)
 // ─── LÉPÉS 4: URL kinyerés ────────────────────────────────────────────────────
 
 Console.WriteLine("[4/6] URL kinyerés...");
-var allLinks = relevantEmails
-    .SelectMany(UrlExtractor.ExtractLinks)
+var allLinks = (await Task.WhenAll(
+    relevantEmails.Select(UrlExtractor.ExtractLinksAsync)))
+    .SelectMany(x => x)
     .ToList();
 Console.WriteLine($"[4/6] Kinyert linkek: {allLinks.Count} db");
 

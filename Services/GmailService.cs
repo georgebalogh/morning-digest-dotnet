@@ -37,14 +37,42 @@ public class GmailService
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
             ?? throw new InvalidOperationException("credentials.json parse sikertelen");
 
+        // Ha client_id/client_secret hiányzik a credentials.json-ból,
+        // keressük a gcp-oauth.keys.json-ban (ugyanabban a könyvtárban)
+        if (string.IsNullOrWhiteSpace(raw.ClientId) || string.IsNullOrWhiteSpace(raw.ClientSecret))
+        {
+            var dir = Path.GetDirectoryName(credentialsPath)!;
+            var oauthKeysPath = Path.Combine(dir, "gcp-oauth.keys.json");
+            if (File.Exists(oauthKeysPath))
+            {
+                var keysDoc = JsonDocument.Parse(File.ReadAllText(oauthKeysPath));
+                // Struktúra: { "installed": { "client_id": "...", "client_secret": "..." } }
+                var root = keysDoc.RootElement;
+                JsonElement installed;
+                if (!root.TryGetProperty("installed", out installed))
+                    root.TryGetProperty("web", out installed);
+
+                if (installed.ValueKind == JsonValueKind.Object)
+                {
+                    if (string.IsNullOrWhiteSpace(raw.ClientId) &&
+                        installed.TryGetProperty("client_id", out var cid))
+                        raw.ClientId = cid.GetString();
+
+                    if (string.IsNullOrWhiteSpace(raw.ClientSecret) &&
+                        installed.TryGetProperty("client_secret", out var csec))
+                        raw.ClientSecret = csec.GetString();
+                }
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(raw.ClientId))
         {
-            Console.Error.WriteLine("❌ credentials.json: client_id hiányzik");
+            Console.Error.WriteLine("❌ client_id hiányzik (credentials.json és gcp-oauth.keys.json)");
             Environment.Exit(1);
         }
         if (string.IsNullOrWhiteSpace(raw.ClientSecret))
         {
-            Console.Error.WriteLine("❌ credentials.json: client_secret hiányzik");
+            Console.Error.WriteLine("❌ client_secret hiányzik (credentials.json és gcp-oauth.keys.json)");
             Environment.Exit(1);
         }
         if (string.IsNullOrWhiteSpace(raw.RefreshToken))

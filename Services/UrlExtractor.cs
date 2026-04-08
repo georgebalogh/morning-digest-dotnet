@@ -1,6 +1,7 @@
-using System.Net;
-using System.Text.RegularExpressions;
 using System.Web;
+using System.Text.RegularExpressions;
+using AngleSharp;
+using AngleSharp.Dom;
 using MorningDigest.Models;
 
 namespace MorningDigest.Services;
@@ -15,7 +16,7 @@ public static class UrlExtractor
         Timeout = TimeSpan.FromSeconds(5)
     };
 
-    // ─── Blacklist (domain/path based — NO query-param entries) ──────────────
+    // ─── Blacklist (domain/path based — no query-param entries) ──────────────
 
     private static readonly string[] Blacklist =
     [
@@ -31,7 +32,6 @@ public static class UrlExtractor
         "/cdn-cgi/", "images.", "img.", "static.", "assets.",
         ".jpg", ".jpeg", ".png", ".gif", ".svg", ".ico", ".css", ".js",
         "go.redirectingat.com", "r.mail.",
-        // Specific click-tracker domains (not the blunt "click." prefix)
         "click.convertkit-mail.com", "click.pstmrk.it", "click.mailersend.com",
         "click.e.hubspot.com", "click.mlsend.com"
     ];
@@ -46,7 +46,7 @@ public static class UrlExtractor
         "ep.sendgrid.net",
         "app.mailerlite.com",
         "mailchi.mp",
-        "rs6.net",          // Constant Contact
+        "rs6.net",
         "ct.sendo.io",
     ];
 
@@ -58,22 +58,16 @@ public static class UrlExtractor
         "url", "u", "q", "link", "lp", "p", "dest", "destination", "to"
     ];
 
-    // ─── Regexes ──────────────────────────────────────────────────────────────
+    // ─── Fallback regex for plain-text emails ─────────────────────────────────
 
-    // Primary: parse <a href="...">anchor</a>
-    private static readonly Regex AnchorRegex = new(
-        @"<a\s[^>]*\bhref=[""'](https?://[^""'\s>]+)[""'][^>]*>(.*?)</a>",
-        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+    private static readonly Regex PlainUrlRegex =
+        new(@"https?://[^\s<>""')\]]+", RegexOptions.Compiled);
 
-    // Strip inner HTML tags from anchor text
     private static readonly Regex StripTagsRegex =
         new(@"<[^>]+>", RegexOptions.Compiled);
 
-    // Fallback: raw URL regex for plain-text emails
-    private static readonly Regex UrlRegex =
-        new(@"https?://[^\s<>""')\]]+", RegexOptions.Compiled);
-
-    private const int MaxLinksPerEmail = 10;
+    private const int MinSequenceLength = 3;
+    private const int MaxLinksPerContainer = 2;
     private const int MinUrlLength = 20;
 
     // ─── Public entry point ───────────────────────────────────────────────────
@@ -81,71 +75,38 @@ public static class UrlExtractor
     public static async Task<List<LinkItem>> ExtractLinksAsync(EmailItem email)
     {
         var body = email.Body;
-        bool isHtml = body.Contains("<a ", StringComparison.OrdinalIgnoreCase)
-                   || body.Contains("<A ", StringComparison.Ordinal);
 
-        return isHtml
-            ? await ExtractFromHtmlAsync(body, email)
-            : ExtractFromPlainText(body, email);
+        // Plain-text fallback: no anchor tags present
+        if (!body.Contains("<a ", StringComparison.OrdinalIgnoreCase) &&
+            !body.Contains("<A ", StringComparison.Ordinal))
+            return ExtractFromPlainText(body, email);
+
+        return await ExtractFromHtmlAsync(body, email);
     }
 
-    // ─── HTML path: <a href> parsing ──────────────────────────────────────────
+    // ─── Phase 1–4: Structural HTML processor ────────────────────────────────
 
     private static async Task<List<LinkItem>> ExtractFromHtmlAsync(string html, EmailItem email)
     {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var candidates = new List<(string url, string anchor, string context)>();
+        // Phase 1: parse DOM with AngleSharp
+        var config = Configuration.Default;
+        using var browsingContext = BrowsingContext.New(config);
+        using var document = await browsingContext.OpenAsync(req => req.Content(html));
 
-        foreach (Match m in AnchorRegex.Matches(html))
+        // Phase 2 & 3: find the longest repeating-fingerprint sequence in the DOM
+        var winningContainers = FindArticleContainers(document.Body ?? document.DocumentElement);
+
+        // No repeating structure found → drop this email
+        if (winningContainers.Count == 0)
         {
-            // Step 1: decode &amp; in href
-            var rawUrl = m.Groups[1].Value
-                .Replace("&amp;", "&")
-                .Replace("&lt;", "<")
-                .Replace("&gt;", ">")
-                .TrimEnd('.', ',', ';', '!', ')', '>', ']');
-
-            // Step 2: unwrap redirect query param (e.g. ?redirectUrl=, ?url=)
-            var unwrapped = TryUnwrapRedirectUrl(rawUrl);
-
-            // Step 3: strip query string → clean article URL
-            var url = StripQueryString(unwrapped);
-
-            if (url.Length < MinUrlLength) continue;
-
-            // Step 4: blacklist check (domain/path only, no query params)
-            if (IsBlacklisted(url)) continue;
-
-            if (!seen.Add(url)) continue;
-
-            // Anchor text
-            var rawAnchor = m.Groups[2].Value;
-            var anchor = StripTagsRegex.Replace(rawAnchor, " ")
-                .Replace("&amp;", "&").Replace("&lt;", "<").Replace("&gt;", ">")
-                .Replace("&nbsp;", " ").Replace("&#39;", "'").Replace("&quot;", "\"")
-                .Replace('\n', ' ').Replace('\r', ' ').Trim();
-            anchor = Regex.Replace(anchor, @"\s{2,}", " ");
-
-            // Skip pure-image links (no meaningful anchor text)
-            if (string.IsNullOrWhiteSpace(anchor)) continue;
-
-            // Context from surrounding HTML
-            var idx = m.Index;
-            var start = Math.Max(0, idx - 80);
-            var end = Math.Min(html.Length, idx + m.Length + 80);
-            var rawContext = html[start..end];
-            var context = StripTagsRegex.Replace(rawContext, " ")
-                .Replace("&amp;", "&").Replace("&nbsp;", " ")
-                .Replace('\n', ' ').Replace('\r', ' ').Trim();
-            context = Regex.Replace(context, @"\s{2,}", " ");
-            if (context.Length > 200) context = context[..200];
-
-            candidates.Add((url, anchor, context));
-
-            if (candidates.Count >= MaxLinksPerEmail) break;
+            Console.WriteLine($"  ⚠  Nem található cikk-struktúra: {email.Subject}");
+            return [];
         }
 
-        // Step 5: resolve opaque redirect domains via HTTP HEAD (parallel)
+        // Phase 4: extract + clean URLs from winning containers
+        var candidates = ExtractUrlsFromContainers(winningContainers, email);
+
+        // Resolve opaque redirect domains via HTTP HEAD (parallel)
         var resolvedTasks = candidates.Select(async c =>
         {
             var resolvedUrl = IsOpaqueRedirect(c.url)
@@ -155,7 +116,7 @@ public static class UrlExtractor
         });
         var resolved = await Task.WhenAll(resolvedTasks);
 
-        // Deduplicate again after resolution (two different tracker URLs may point to same article)
+        // Final dedup after resolution
         var finalSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var results = new List<LinkItem>();
         foreach (var (url, anchor, context) in resolved)
@@ -172,6 +133,162 @@ public static class UrlExtractor
         return results;
     }
 
+    // ─── Phase 2+3: DOM traversal + fingerprint sequence detection ───────────
+
+    private static List<IElement> FindArticleContainers(IElement root)
+    {
+        var bestSequence = new List<IElement>();
+
+        // Recursively walk every element in the tree
+        WalkNode(root, bestSequence);
+
+        return bestSequence;
+    }
+
+    private static void WalkNode(IElement node, List<IElement> bestSequence)
+    {
+        // Check this node's children for repeating fingerprint sequences
+        var children = node.Children.ToList();
+        if (children.Count >= MinSequenceLength)
+        {
+            var candidate = FindBestSequence(children);
+            if (candidate.Count > bestSequence.Count)
+            {
+                bestSequence.Clear();
+                bestSequence.AddRange(candidate);
+                // Found a good sequence at this level — don't recurse into these children.
+                // Recurse only into siblings that are NOT part of the winning sequence.
+                var sequenceSet = candidate.ToHashSet();
+                foreach (var child in children.Where(c => !sequenceSet.Contains(c)))
+                    WalkNode(child, bestSequence);
+                return;
+            }
+        }
+
+        // No sequence found at this level — recurse into all children
+        foreach (var child in children)
+            WalkNode(child, bestSequence);
+    }
+
+    private static List<IElement> FindBestSequence(List<IElement> siblings)
+    {
+        // Compute fingerprint for each sibling
+        var fingerprints = siblings.Select(Fingerprint).ToList();
+
+        var best = new List<IElement>();
+        var current = new List<IElement>();
+        string? currentFp = null;
+        int noiseCount = 0;
+
+        for (int i = 0; i < siblings.Count; i++)
+        {
+            var fp = fingerprints[i];
+
+            if (currentFp == null)
+            {
+                // Start new sequence
+                currentFp = fp;
+                current.Add(siblings[i]);
+                noiseCount = 0;
+            }
+            else if (fp == currentFp)
+            {
+                // Matching fingerprint — add to sequence, reset noise
+                current.Add(siblings[i]);
+                noiseCount = 0;
+            }
+            else if (noiseCount == 0)
+            {
+                // First non-matching element — treat as noise (spacer), keep going
+                noiseCount++;
+                // Don't add the noise element to the sequence
+            }
+            else
+            {
+                // Second non-matching element — sequence broken
+                if (current.Count >= MinSequenceLength && current.Count > best.Count)
+                    best = new List<IElement>(current);
+
+                // Start fresh from current element
+                currentFp = fp;
+                current = [siblings[i]];
+                noiseCount = 0;
+            }
+        }
+
+        // Check final sequence
+        if (current.Count >= MinSequenceLength && current.Count > best.Count)
+            best = new List<IElement>(current);
+
+        return best;
+    }
+
+    /// Fingerprint = "PARENTTAG:CHILD1|CHILD2|..." using direct element children only.
+    private static string Fingerprint(IElement el)
+    {
+        var childTags = el.Children
+            .Select(c => c.TagName.ToUpperInvariant())
+            .ToList();
+
+        return childTags.Count == 0
+            ? el.TagName.ToUpperInvariant()
+            : $"{el.TagName.ToUpperInvariant()}:{string.Join("|", childTags)}";
+    }
+
+    // ─── Phase 4: extract URLs from winning containers ────────────────────────
+
+    private static List<(string url, string anchor, string context)> ExtractUrlsFromContainers(
+        List<IElement> containers, EmailItem email)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var results = new List<(string url, string anchor, string context)>();
+
+        foreach (var container in containers)
+        {
+            int addedForContainer = 0;
+
+            foreach (var anchor in container.QuerySelectorAll("a[href]"))
+            {
+                if (addedForContainer >= MaxLinksPerContainer) break;
+
+                var rawHref = anchor.GetAttribute("href") ?? string.Empty;
+
+                // Decode HTML entities in href
+                rawHref = rawHref
+                    .Replace("&amp;", "&")
+                    .Replace("&lt;", "<")
+                    .Replace("&gt;", ">")
+                    .TrimEnd('.', ',', ';', '!', ')', '>', ']');
+
+                if (!rawHref.StartsWith("http", StringComparison.OrdinalIgnoreCase)) continue;
+
+                // Unwrap redirect params, strip query string
+                var unwrapped = TryUnwrapRedirectUrl(rawHref);
+                var url = StripQueryString(unwrapped);
+
+                if (url.Length < MinUrlLength) continue;
+                if (IsBlacklisted(url)) continue;
+                if (!seen.Add(url)) continue;
+
+                // Anchor text from element
+                var anchorText = anchor.TextContent
+                    .Replace('\n', ' ').Replace('\r', ' ').Trim();
+                anchorText = Regex.Replace(anchorText, @"\s{2,}", " ");
+
+                // Context: text content of the whole container
+                var context = container.TextContent
+                    .Replace('\n', ' ').Replace('\r', ' ').Trim();
+                context = Regex.Replace(context, @"\s{2,}", " ");
+                if (context.Length > 200) context = context[..200];
+
+                results.Add((url, anchorText, context));
+                addedForContainer++;
+            }
+        }
+
+        return results;
+    }
+
     // ─── Plain text fallback ──────────────────────────────────────────────────
 
     private static List<LinkItem> ExtractFromPlainText(string text, EmailItem email)
@@ -179,7 +296,7 @@ public static class UrlExtractor
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var results = new List<LinkItem>();
 
-        foreach (Match match in UrlRegex.Matches(text))
+        foreach (Match match in PlainUrlRegex.Matches(text))
         {
             var rawUrl = match.Value.TrimEnd('.', ',', ';', '!', '?', ')', '>', ']');
             var unwrapped = TryUnwrapRedirectUrl(rawUrl);
@@ -203,8 +320,6 @@ public static class UrlExtractor
                 Context: context,
                 Source: $"{email.Subject} ({email.From})"
             ));
-
-            if (results.Count >= MaxLinksPerEmail) break;
         }
 
         return results;
@@ -212,9 +327,6 @@ public static class UrlExtractor
 
     // ─── URL pipeline helpers ─────────────────────────────────────────────────
 
-    /// Unwrap redirect wrapper URLs by extracting the destination from known query params.
-    /// e.g. https://medium.com/m/global-identity-2?redirectUrl=https%3A%2F%2Fmedium.com%2F...
-    ///   or https://click.convertkit.com/xyz?url=https%3A%2F%2Farticle.com%2F...
     private static string TryUnwrapRedirectUrl(string url)
     {
         try
@@ -228,22 +340,18 @@ public static class UrlExtractor
                 var candidate = query[param];
                 if (!string.IsNullOrEmpty(candidate))
                 {
-                    // Decode percent-encoding (may be double-encoded)
                     var decoded = Uri.UnescapeDataString(candidate);
-                    // Double-encoded case
                     if (decoded.Contains('%'))
                         decoded = Uri.UnescapeDataString(decoded);
-
                     if (decoded.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                         return decoded;
                 }
             }
         }
-        catch { /* malformed URL — return as-is */ }
+        catch { }
         return url;
     }
 
-    /// Strip the query string from a URL, keeping only scheme+host+path.
     private static string StripQueryString(string url)
     {
         var qi = url.IndexOf('?');
@@ -252,11 +360,9 @@ public static class UrlExtractor
         return clean.Length < MinUrlLength ? url : clean;
     }
 
-    /// Check if the URL is an opaque redirect that needs HTTP resolution.
     private static bool IsOpaqueRedirect(string url) =>
         OpaqueRedirectDomains.Any(d => url.Contains(d, StringComparison.OrdinalIgnoreCase));
 
-    /// Follow a single HTTP redirect and return the Location URL.
     private static async Task<string> ResolveOpaqueRedirectAsync(string url)
     {
         try
@@ -268,16 +374,16 @@ public static class UrlExtractor
 
             if (resp.Headers.Location is { } loc)
             {
-                var resolved = loc.IsAbsoluteUri ? loc.AbsoluteUri : new Uri(new Uri(url), loc).AbsoluteUri;
-                // Strip query string from resolved URL too
+                var resolved = loc.IsAbsoluteUri
+                    ? loc.AbsoluteUri
+                    : new Uri(new Uri(url), loc).AbsoluteUri;
                 return StripQueryString(resolved);
             }
         }
-        catch { /* timeout or network error — fall through */ }
+        catch { }
         return url;
     }
 
-    /// Check if URL contains any blacklisted substring.
     private static bool IsBlacklisted(string url) =>
         Blacklist.Any(b => url.Contains(b, StringComparison.OrdinalIgnoreCase));
 }

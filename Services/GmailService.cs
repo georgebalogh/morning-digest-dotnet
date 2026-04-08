@@ -215,17 +215,17 @@ public class GmailService
 
         if (payload.Parts == null) return string.Empty;
 
-        // 1. prioritás: text/plain
-        foreach (var part in payload.Parts)
-        {
-            if (part.MimeType == "text/plain" && !string.IsNullOrEmpty(part.Body?.Data))
-                return DecodeBase64Url(part.Body.Data);
-        }
-
-        // 2. prioritás: text/html (nyers HTML — az UrlExtractor dolgozza fel), majd nested parts
+        // 1. prioritás: text/html (struktúra-detektáláshoz szükséges a nyers HTML)
         foreach (var part in payload.Parts)
         {
             if (part.MimeType == "text/html" && !string.IsNullOrEmpty(part.Body?.Data))
+                return DecodeBase64Url(part.Body.Data);
+        }
+
+        // 2. prioritás: text/plain, majd nested parts
+        foreach (var part in payload.Parts)
+        {
+            if (part.MimeType == "text/plain" && !string.IsNullOrEmpty(part.Body?.Data))
                 return DecodeBase64Url(part.Body.Data);
 
             if (part.Parts != null)

@@ -9,8 +9,8 @@ pdf_options:
 # Morning Tech Digest — IT Specifikáció
 
 **Projekt:** MorningDigest.Net  
-**Verzió:** 1.0  
-**Dátum:** 2026-04-08  
+**Verzió:** 1.1  
+**Dátum:** 2026-04-14  
 **Repository:** https://github.com/georgebalogh/morning-digest-dotnet  
 **Platform:** Windows 10/11 x64  
 **Runtime:** .NET 8.0 LTS (self-contained)
@@ -356,3 +356,23 @@ Gmail (label: Develop)
 | #11 | Structural HTML processor — DOM fingerprint-based extraction | ✅ Closed |
 | #12 | Filter non-article URLs: profiles, root domains, tag/category pages | ✅ Closed |
 | #13 | Fix article URL filter edge cases: /@username/slug and single-segment URLs | ✅ Closed |
+| #14 | Remove source email field from digest card layout | ✅ Closed |
+| #15 | Deduplicate links across emails using DistinctBy URL | ✅ Closed |
+
+---
+
+## 15. Változásnapló (post-v1.0)
+
+### v1.1.0 — 2026-04-14
+
+**fix: Cross-email URL deduplikáció** (`Program.cs`)  
+`DistinctBy(l => l.Url, StringComparer.OrdinalIgnoreCase)` hozzáadva a `SelectMany` után. Ha ugyanaz a cikk több newsletterben is szerepelt, csak egyszer kerül a digestbe.
+
+### v1.0.3 — 2026-04-08
+
+**fix: Article URL filter edge cases** (`UrlExtractor.cs`)
+- Minimum 2 path szegmens szabály — egyetlen szegmenses publication homepagek kizárva (pl. `medium.com/lets-code-future`)
+- `/@username` (1 szegmens) → profil (kizárva); `/@username/article-slug` (2 szegmens) → cikk (átengedve)
+
+**style: Source mező eltávolítva** (`DigestBuilder.cs`)  
+A digest kártyákról eltávolítva a `📧 subject (from)` sor.

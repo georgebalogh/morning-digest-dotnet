@@ -127,6 +127,7 @@ Console.WriteLine("[4/6] URL kinyerés...");
 var allLinks = (await Task.WhenAll(
     relevantEmails.Select(UrlExtractor.ExtractLinksAsync)))
     .SelectMany(x => x)
+    .DistinctBy(l => l.Url, StringComparer.OrdinalIgnoreCase)
     .ToList();
 Console.WriteLine($"[4/6] Kinyert linkek: {allLinks.Count} db");
 
